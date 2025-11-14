@@ -19,13 +19,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     
     if (!empty($username) && !empty($password)) {
+        error_log("Login attempt: username=$username");
+        
+        // Debug: Check what's in the database
+        $database = new Database();
+        $db = $database->getConnection();
+        $check_query = "SELECT username, password FROM users WHERE username = 'admin'";
+        $stmt = $db->query($check_query);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($user) {
+            error_log("Found user: " . $user['username']);
+            error_log("Stored hash: " . $user['password']);
+            error_log("Password verify: " . (password_verify($password, $user['password']) ? 'true' : 'false'));
+        } else {
+            error_log("No admin user found in database");
+        }
+        
         if (login($username, $password)) {
+            error_log("Login successful for: $username");
             if (!headers_sent()) {
                 header('Location: /panel.php');
                 exit;
             }
         } else {
             $error = 'Invalid username or password';
+            error_log("Login failed for: $username");
         }
     } else {
         $error = 'Please enter both username and password';
@@ -86,14 +105,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <form method="POST">
             <div class="input-field">
                 <i class="material-icons prefix">person</i>
-                <input id="username" type="text" name="username" required>
-                <label for="username">Username</label>
+                <input id="username" type="text" name="username" value="admin" required>
+                <label for="username" class="active">Username</label>
             </div>
             
             <div class="input-field">
                 <i class="material-icons prefix">lock</i>
-                <input id="password" type="password" name="password" required>
-                <label for="password">Password</label>
+                <input id="password" type="password" name="password" value="admin123" required>
+                <label for="password" class="active">Password</label>
             </div>
             
             <div class="center-align" style="margin-top: 2rem;">
@@ -109,6 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <h6>Default Credentials</h6>
                 <p><strong>Username:</strong> admin</p>
                 <p><strong>Password:</strong> admin123</p>
+                <p><small class="grey-text">(Pre-filled in form)</small></p>
             </div>
         </div>
     </div>
