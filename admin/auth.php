@@ -1,6 +1,8 @@
 <?php
+// START SESSION AT THE VERY TOP - before any output
 session_start();
 
+// Use absolute path
 require_once __DIR__ . '/../config/database.php';
 
 function is_logged_in() {
@@ -9,8 +11,11 @@ function is_logged_in() {
 
 function require_login() {
     if (!is_logged_in()) {
-        header('Location: login.php');
-        exit;
+        // Make sure no output has been sent before header
+        if (!headers_sent()) {
+            header('Location: login.php');
+            exit;
+        }
     }
 }
 
