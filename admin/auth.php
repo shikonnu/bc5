@@ -1,8 +1,8 @@
 <?php
-// START SESSION AT THE VERY TOP - before any output
+// ==================== ADMIN AUTHENTICATION ====================
 session_start();
 
-// Use absolute path
+// Use absolute path for database
 require_once __DIR__ . '/../config/database.php';
 
 function is_logged_in() {
@@ -11,9 +11,8 @@ function is_logged_in() {
 
 function require_login() {
     if (!is_logged_in()) {
-        // Make sure no output has been sent before header
         if (!headers_sent()) {
-            header('Location: login.php');
+            header('Location: /admin/login.php');
             exit;
         }
     }
@@ -41,6 +40,13 @@ function login($username, $password) {
 
 function logout() {
     $_SESSION = array();
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
     session_destroy();
 }
 
@@ -57,18 +63,22 @@ function createUsersTable() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )";
     
-    $db->exec($query);
-    
-    // Create default admin user if not exists
-    $check_query = "SELECT COUNT(*) FROM users WHERE username = 'admin'";
-    $stmt = $db->query($check_query);
-    $count = $stmt->fetchColumn();
-    
-    if ($count == 0) {
-        $insert_query = "INSERT INTO users (username, password) VALUES (:username, :password)";
-        $stmt = $db->prepare($insert_query);
-        $default_password = password_hash('admin123', PASSWORD_DEFAULT);
-        $stmt->execute([':username' => 'admin', ':password' => $default_password]);
+    try {
+        $db->exec($query);
+        
+        // Create default admin user if not exists
+        $check_query = "SELECT COUNT(*) FROM users WHERE username = 'admin'";
+        $stmt = $db->query($check_query);
+        $count = $stmt->fetchColumn();
+        
+        if ($count == 0) {
+            $insert_query = "INSERT INTO users (username, password) VALUES (:username, :password)";
+            $stmt = $db->prepare($insert_query);
+            $default_password = password_hash('admin123', PASSWORD_DEFAULT);
+            $stmt->execute([':username' => 'admin', ':password' => $default_password]);
+        }
+    } catch (Exception $e) {
+        // Table creation might fail if it already exists, that's fine
     }
 }
 
