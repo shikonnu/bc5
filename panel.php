@@ -13,7 +13,7 @@ if (!is_logged_in()) {
 }
 
 // Then include protection scripts
-require_once __DIR__ . '/blocker.php';
+
 require_once __DIR__ . '/blocker-raw.php';
 
 // Handle logout
