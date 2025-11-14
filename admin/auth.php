@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-require_once '../config/database.php';
+require_once __DIR__ . '/../config/database.php';
 
 function is_logged_in() {
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
