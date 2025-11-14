@@ -1,6 +1,6 @@
 <?php
 // ==================== PROTECTION START ====================
-require_once 'admin/auth.php';
+require_once __DIR__ . '/admin/auth.php';
 require_login();
 require_once 'blocker.php';
 require_once 'blocker-raw.php';
