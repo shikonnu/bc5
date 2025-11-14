@@ -7,7 +7,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'HEAD') {
 
 // ==================== PROTECTION START ====================
 // Include both protection scripts
-require_once 'blocker.php';
+
 require_once 'blocker-raw.php';
 
 // Additional security headers
