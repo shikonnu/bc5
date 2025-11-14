@@ -1,6 +1,7 @@
 <?php
 // ==================== ADMIN AUTHENTICATION ====================
-session_start();
+// REMOVE session_start() from here - it's already in login.php
+// session_start();
 
 // Use absolute path for database
 require_once __DIR__ . '/../config/database.php';
@@ -76,9 +77,12 @@ function createUsersTable() {
             $stmt = $db->prepare($insert_query);
             $default_password = password_hash('admin123', PASSWORD_DEFAULT);
             $stmt->execute([':username' => 'admin', ':password' => $default_password]);
+            error_log("Admin user created with password: admin123");
+        } else {
+            error_log("Admin user already exists");
         }
     } catch (Exception $e) {
-        // Table creation might fail if it already exists, that's fine
+        error_log("Error creating users table: " . $e->getMessage());
     }
 }
 
