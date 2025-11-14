@@ -1,0 +1,96 @@
+Netiface LLC
+Oy Crea Nova Hosting Solution Ltd
+NTT Communications Corporation
+AS202422 G-Core Labs S.A.
+AS33083 AxcelX Technologies LLC
+AS42708 GleSYS AB
+AS7713 PT Telekomunikasi Indonesia
+AS24203 PT XL Axiata
+AS23693 PT. Telekomunikasi Selular
+AS16509 Amazon.com, Inc.
+AS7015 Comcast Cable Communications, LLC
+AS12876 ONLINE S.A.S.
+AS395111 KVCHOSTING.COM LLC
+AS61317 Digital Energy Technologies Ltd.
+AS36351 SoftLayer Technologies Inc.
+AS4134 CHINANET-BACKBONE
+AS17670 PT. MNC Kabel Mediacom
+AS62041 Telegram Messenger Inc
+AS7381 SunGard Availability Services LP
+AS51852 Private Layer INC
+AS16276 OVH SAS
+AS9009 M247 Ltd
+AS6871 Plusnet
+AS8100 QuadraNet Enterprises LLC
+AS14061 DigitalOcean, LLC
+AS35228 Telefonica UK Limited
+AS36352 ColoCrossing
+AS212238 Datacamp Limited
+AS37611 Afrihost (Pty) Ltd
+AS14618 Amazon.com, Inc.
+AS11067 Panhandle Telecommunications Systems, INC.
+AS17310 Point Broadband Fiber Holding, LLC
+AS8057 Vision Net, Inc.
+AS6300 Consolidated Communications, Inc.
+AS32703 Intelligent Fiber Network
+AS7922 Comcast Cable Communications, LLC
+AS11232 Midcontinent Communications
+AS9105 TalkTalk Communications Limited
+AS17090 Database by Design, LLC
+AS63949 Linode, LLC
+AS3801 Mikrotec Internet Services
+AS60068 Datacamp Limited
+AS20057 AT&T Mobility LLC
+AS7922 Comcast Cable Communications, LLC
+AS54538 PALO ALTO NETWORKS
+AS200107 Kaspersky Lab Switzerland GmbH
+AS21859 Zenlayer Inc
+AS202425 IP Volume inc
+AS8075 Microsoft Corporation
+AS396982 Google LLC
+AS57523 Chang Way Technologies Co. Limited
+AS398722 CENSYS-ARIN-03
+AS398324 Censys, Inc.
+AS6939 Hurricane Electric LLC
+AS53667 FranTech Solutions
+AS49981 WorldStream B.V.
+AS135061 China Unicom Guangdong IP network
+AS29550 Simply Transit Ltd
+AS24940 Hetzner Online GmbH
+AS10439 CariNet, Inc.
+AS211680 NSEC - Sistemas Informaticos, S.A.
+AS141167 AgotoZ HK Limited
+AS203020 HostRoyale Technologies Pvt Ltd
+AS19148 Leaseweb USA, Inc.
+AS54203 Strong Technology, LLC.
+AS51430 AltusHost B.V.
+AS49855 PLUTEX GmbH
+AS13335 Cloudflare, Inc.
+AS40355 Sundance International LLC
+AS23650 AS Number for CHINANET jiangsu province backbone
+AS22363 Powerhouse Management, Inc.
+AS13285 TalkTalk Communications Limited
+AS174 Cogent Communications
+AS46516 HostRoyale LLC
+AS17252 Colocation America Corporation
+AS132203 Tencent Building, Kejizhongyi Avenue
+AS198375 INULOGIC SARL
+AS44592 SkyLink Data Center BV
+AS45204 GEMNET LLC
+AS9009 M247 Europe SRL
+AS55990 Huawei Cloud Service data center
+AS398705 CENSYS-ARIN-02
+AS23724 IDC, China Telecommunications Corporation
+AS47610 RWTH Aachen University
+AS54098 LIONLINK NETWORKS
+AS211298 Constantine Cybersecurity Ltd.
+AS56655 TerraHost AS
+AS135377 UCLOUD INFORMATION TECHNOLOGY (HK) LIMITED
+AS4808 China Unicom Beijing Province Network
+AS34665 Petersburg Internet Network ltd.
+AS18403 FPT Telecom Company
+AS12552 GlobalConnect AB
+AS205100 F3 Netze e.V.
+AS38283 CHINANET SiChuan Telecom Internet Data Center
+AS63199 CDS Global Cloud Co., Ltd
+AS680 Verein zur Foerderung eines Deutschen Forschungsnetzes e.V.

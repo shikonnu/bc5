@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: coinbase-protection
+    env: php
+    plan: free
+    buildCommand: ""
+    startCommand: "apache2-foreground"
+    envVars:
+      - key: PHP_VERSION
+        value: 8.1
