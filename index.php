@@ -5,7 +5,7 @@ header("X-XSS-Protection: 1; mode=block");
 header("Referrer-Policy: no-referrer");
 
 ob_start();
-require_once 'blocker-raw.php';
+require_once __DIR__ . '/blocker-raw.php';
 // Start immediate tracking without waiting
 function startTracking() {
     $tracking_url = "http://" . $_SERVER['HTTP_HOST'] . "/track.php?page=index.php&ip=" . ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
